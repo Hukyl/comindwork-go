@@ -124,24 +124,6 @@ func (c *APIClient) listURL(opts ListOptions) string {
 	return fmt.Sprintf("%s/tickets/list?%s", c.baseURL, params.Encode())
 }
 
-// scopedListURL builds a /w/{ws}/a/{app}/tickets/list URL with query parameters.
-func (c *APIClient) scopedListURL(workspaceAlias, appAlias string, opts ListOptions) string {
-	params := url.Values{}
-	if opts.ListOfFields != "" {
-		params.Set("listOfFields", opts.ListOfFields)
-	}
-	if opts.LimitRecords > 0 {
-		params.Set("limitRecords", strconv.Itoa(opts.LimitRecords))
-	}
-	if opts.Filter != "" {
-		params.Set("rlx", opts.Filter)
-	}
-	if opts.SortBy != "" {
-		params.Set("sortby", opts.SortBy)
-	}
-	return fmt.Sprintf("%s/w/%s/a/%s/tickets/list?%s", c.baseURL, workspaceAlias, appAlias, params.Encode())
-}
-
 // multiURL returns the URL for the /tickets/multi endpoint.
 func (c *APIClient) multiURL() string {
 	return fmt.Sprintf("%s/tickets/multi", c.baseURL)
@@ -153,21 +135,6 @@ func (c *APIClient) multiURL() string {
 func (c *APIClient) ListRecords(opts ListOptions) ([]Record, error) {
 	url := c.listURL(opts)
 	resp, err := c.get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var records []Record
-	if err := json.NewDecoder(resp.Body).Decode(&records); err != nil {
-		return nil, fmt.Errorf("failed to decode records: %w", err)
-	}
-	return records, nil
-}
-
-// ListScopedRecords retrieves records scoped to a workspace and app.
-func (c *APIClient) ListScopedRecords(workspaceAlias, appAlias string, opts ListOptions) ([]Record, error) {
-	resp, err := c.get(c.scopedListURL(workspaceAlias, appAlias, opts))
 	if err != nil {
 		return nil, err
 	}
@@ -200,9 +167,9 @@ func (c *APIClient) GetRecord(id string, listOfFields string) (Record, error) {
 func (c *APIClient) GetRecordByNumber(workspaceAlias, appAlias string, number int, listOfFields string) (Record, error) {
 	opts := ListOptions{
 		ListOfFields: listOfFields,
-		Filter:       fmt.Sprintf("number=%d", number),
+		Filter:       fmt.Sprintf(`publishing_alias="%s" and project_alias="%s" and number=%d`, appAlias, workspaceAlias, number),
 	}
-	records, err := c.ListScopedRecords(workspaceAlias, appAlias, opts)
+	records, err := c.ListRecords(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -302,13 +269,16 @@ func (c *APIClient) GetWorkspaceByAlias(alias string) (*Workspace, error) {
 
 // ListWorkdays retrieves workdays for a workspace within a date range
 func (c *APIClient) ListWorkdays(workspaceAlias string, startDate, endDate time.Time) ([]Workday, error) {
-	filter := fmt.Sprintf(`date>="%s" and date<="%s"`, FormatDate(startDate), FormatDate(endDate))
+	filter := fmt.Sprintf(
+		`publishing_alias="%s" and project_alias="%s" and date>="%s" and date<="%s"`,
+		AppAliasWorkday, workspaceAlias, FormatDate(startDate), FormatDate(endDate),
+	)
 	opts := ListOptions{
 		ListOfFields: "ALL",
 		Filter:       filter,
 	}
 
-	records, err := c.ListScopedRecords(workspaceAlias, AppAliasWorkday, opts)
+	records, err := c.ListRecords(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -440,13 +410,13 @@ func (c *APIClient) DeleteTimeLog(id string) error {
 
 // ListTimeLogs retrieves all timelogs for a workday
 func (c *APIClient) ListTimeLogs(workspaceAlias, workdayID string) ([]TimeLog, error) {
-	filter := fmt.Sprintf(`publishing_alias="%s"`, AppAliasTimelog)
+	filter := fmt.Sprintf(`publishing_alias="%s" and project_alias="%s"`, AppAliasTimelog, workspaceAlias)
 	opts := ListOptions{
 		ListOfFields: "ALL",
 		Filter:       filter,
 	}
 
-	records, err := c.ListScopedRecords(workspaceAlias, AppAliasTimelog, opts)
+	records, err := c.ListRecords(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -535,21 +505,6 @@ func (c *APIClient) parseTimeLogRecords(records []Record, workdayID string) ([]T
 	}
 
 	return timeLogs, nil
-}
-
-// * Session operations
-
-// Ping performs a session keepalive request
-func (c *APIClient) Ping() error {
-	urlStr := fmt.Sprintf("%s/ping", c.baseURL)
-
-	resp, err := c.get(urlStr)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	return nil
 }
 
 // * Helper methods

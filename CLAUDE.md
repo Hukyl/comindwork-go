@@ -21,7 +21,7 @@ No Makefile, no linter config, no CI pipeline exists yet.
 
 Single-package library (`package comindwork`) with three files:
 
-- **`client.go`** — `APIClient` struct and all public/private methods. Layers: unexported HTTP helpers (`get`, `post`, `applyAuth`, `isRespError`) → unexported URL builders (`listURL`, `scopedListURL`, `multiURL`) → public domain operations (records, users, workspaces, workdays, timelogs, session).
+- **`client.go`** — `APIClient` struct and all public/private methods. Layers: unexported HTTP helpers (`get`, `post`, `applyAuth`, `isRespError`) → unexported URL builders (`listURL`, `multiURL`) → public domain operations (records, users, workspaces, workdays, timelogs).
 - **`models.go`** — All types (`Workspace`, `Workday`, `TimeLog`, `Task`, `User`, `Record`, `ListOptions`, `MultiResult`, `MultiWarning`) and constants (app aliases, app IDs, transitions).
 - **`utils.go`** — Time formatting/parsing (`FormatISO8601`, `ParseISO8601`, `FormatDate`, `ParseDate`, `CalculateTotalReal`) and task reference parsing (`ParseTaskReference`, `FormatTaskReference`).
 
@@ -39,10 +39,8 @@ Single-package library (`package comindwork`) with three files:
 | Pattern | Usage |
 |---|---|
 | `{base}/tickets/list?listOfFields=&limitRecords=&rlx=&sortby=` | Global record listing |
-| `{base}/w/{wsAlias}/a/{appAlias}/tickets/list?...` | Workspace+app scoped listing |
 | `{base}/tickets/multi` | Bulk create/update/delete (POST) |
 | `{base}/aid/{appID}/tickets/list?...` | App-ID-based listing (users) |
-| `{base}/ping` | Session keepalive |
 
 ## Time Formats
 
