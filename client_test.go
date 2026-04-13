@@ -5,7 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -232,7 +234,7 @@ func TestGetRecordByNumber_UsesScopedURLAndNumberFilter(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, "/w/NICI/a/TASK/tickets/list", gotPath)
-	assert.Equal(t, "number=167", gotRLX)
+	assert.Equal(t, `number="167"`, gotRLX)
 	assert.Equal(t, 167, rec.GetInt("number"))
 }
 
@@ -360,4 +362,292 @@ func TestApplyAuth_OmitsAuthorizationHeaderWhenTokenEmpty(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Empty(t, gotAuth)
+}
+
+// --- ListOptions extensions ---
+
+func TestListRecords_EncodesSkipAncestorsWhenTrue(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListRecords(ListOptions{SkipAncestors: true})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "true", gotQuery.Get("skipAncestors"))
+}
+
+func TestListRecords_OmitsSkipAncestorsWhenFalse(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListRecords(ListOptions{SkipAncestors: false})
+
+	// Assert
+	require.NoError(t, err)
+	assert.False(t, gotQuery.Has("skipAncestors"))
+}
+
+func TestListRecords_EncodesIncludeDeletedAfterAsISO8601UTC(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+	cutoff := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Act
+	_, err := client.ListRecords(ListOptions{IncludeDeletedAfter: cutoff})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "2026-01-01T00:00:00.000Z", gotQuery.Get("includeDeletedAfter"))
+}
+
+func TestListRecords_OmitsIncludeDeletedAfterWhenZero(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListRecords(ListOptions{})
+
+	// Assert
+	require.NoError(t, err)
+	assert.False(t, gotQuery.Has("includeDeletedAfter"))
+}
+
+func TestListRecords_MergesExtraParams(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListRecords(ListOptions{Extra: url.Values{"customFlag": []string{"yes"}}})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "yes", gotQuery.Get("customFlag"))
+}
+
+func TestListRecords_ExtraOverridesNamedFieldOnConflict(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act: set skipAncestors via both channels; Extra must win.
+	_, err := client.ListRecords(ListOptions{
+		SkipAncestors: true,
+		Extra:         url.Values{"skipAncestors": []string{"false"}},
+	})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "false", gotQuery.Get("skipAncestors"))
+}
+
+// --- UsePOST form encoding ---
+
+func TestListRecords_UsePOSTSendsFormEncodedBody(t *testing.T) {
+	// Arrange
+	var gotMethod, gotContentType, gotBody string
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotContentType = r.Header.Get("Content-Type")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListRecords(ListOptions{
+		UsePOST:      true,
+		ListOfFields: "title",
+		LimitRecords: 3,
+		Filter:       `publishing_alias="TASK"`,
+	})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "application/x-www-form-urlencoded", gotContentType)
+	// Params must be in the body, not the URL.
+	assert.Empty(t, gotQuery, "UsePOST should not leak params into the query string")
+	// Body should decode as the same url.Values.
+	parsedBody, err := url.ParseQuery(gotBody)
+	require.NoError(t, err)
+	assert.Equal(t, "title", parsedBody.Get("listOfFields"))
+	assert.Equal(t, "3", parsedBody.Get("limitRecords"))
+	assert.Equal(t, `publishing_alias="TASK"`, parsedBody.Get("rlx"))
+}
+
+func TestListRecordsInApp_UsePOSTHitsSameScopedPath(t *testing.T) {
+	// Arrange
+	var gotPath, gotMethod string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListRecordsInApp("E2E", "TASK", ListOptions{UsePOST: true})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "/w/E2E/a/TASK/tickets/list", gotPath)
+}
+
+// --- GetCommon ---
+
+func TestGetCommon_BuildsApialphaURL(t *testing.T) {
+	// Arrange
+	var gotPath string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"user_name":"x"}`))
+	})
+
+	// Act
+	_, err := client.GetCommon()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "/apialpha.ashx/common", gotPath)
+}
+
+func TestGetCommon_DecodesRecord(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"user_name":"Andrii","tz":100}`))
+	})
+
+	// Act
+	rec, err := client.GetCommon()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "Andrii", rec.GetString("user_name"))
+	assert.Equal(t, 100, rec.GetInt("tz"))
+}
+
+func TestGetCommon_ReturnsErrorOnNon2xx(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	// Act
+	_, err := client.GetCommon()
+
+	// Assert
+	assert.Error(t, err)
+}
+
+// --- CountChanged ---
+
+func TestCountChangedInApp_BuildsScopedURLAndSinceTime(t *testing.T) {
+	// Arrange
+	var gotPath, gotMethod, gotSince string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		gotSince = r.URL.Query().Get("sinceTime")
+		_, _ = w.Write([]byte(`{"status":"ok","data":42}`))
+	})
+	since := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+
+	// Act
+	n, err := client.CountChangedInApp("NICI", "TASK", since)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodGet, gotMethod)
+	assert.Equal(t, "/apialpha.ashx/w/NICI/a/TASK/tickets/changed", gotPath)
+	assert.Equal(t, "2026-04-01T00:00:00.000Z", gotSince)
+	assert.Equal(t, 42, n)
+}
+
+func TestCountChangedByAppID_BuildsAppIDURL(t *testing.T) {
+	// Arrange
+	var gotPath string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"status":"ok","data":7}`))
+	})
+
+	// Act
+	n, err := client.CountChangedByAppID("v2-app-ni-task", time.Now())
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "/apialpha.ashx/aid/v2-app-ni-task/tickets/changed", gotPath)
+	assert.Equal(t, 7, n)
+}
+
+func TestCountChangedInApp_EmitsOnlySinceTime(t *testing.T) {
+	// Arrange: the API returns 500 if checksum/ts/layout_media are sent,
+	// so the library must not include them.
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte(`{"status":"ok","data":0}`))
+	})
+
+	// Act
+	_, err := client.CountChangedInApp("NICI", "TASK", time.Now())
+
+	// Assert
+	require.NoError(t, err)
+	assert.Len(t, gotQuery, 1)
+	assert.True(t, gotQuery.Has("sinceTime"))
+}
+
+func TestCountChangedInApp_ErrorsWhenStatusNotOK(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"error","data":0}`))
+	})
+
+	// Act
+	_, err := client.CountChangedInApp("NICI", "TASK", time.Now())
+
+	// Assert
+	assert.Error(t, err)
+}
+
+func TestCountChangedInApp_ReturnsErrorOnNon2xx(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	// Act
+	_, err := client.CountChangedInApp("NICI", "TASK", time.Now())
+
+	// Assert
+	assert.Error(t, err)
 }

@@ -1,5 +1,10 @@
 package comindwork
 
+import (
+	"net/url"
+	"time"
+)
+
 // AuthPrefix is the authorization scheme used by the ComindWork API.
 const AuthPrefix = "CMW_AUTH_CODE"
 
@@ -48,11 +53,19 @@ func (r Record) GetInt(key string) int {
 }
 
 // ListOptions encapsulates query parameters for /tickets/list endpoints.
+//
+// The server accepts the query either as a URL query string (GET, default)
+// or as an application/x-www-form-urlencoded POST body (set UsePOST to true
+// to work around URL-length limits on long rlx expressions).
 type ListOptions struct {
-	ListOfFields string // Comma-separated field names, or "ALL"
-	LimitRecords int    // Max number of records to return (0 = server default)
-	Filter       string // rlx filter expression
-	SortBy       string // Sort expression, e.g. "creation_date desc"
+	ListOfFields        string     // Comma-separated field names, or "ALL"
+	LimitRecords        int        // Max number of records to return (0 = server default)
+	Filter              string     // rlx filter expression
+	SortBy              string     // Sort expression, e.g. "creation_date desc"
+	SkipAncestors       bool       // Emits skipAncestors=true when set.
+	IncludeDeletedAfter time.Time  // Emits includeDeletedAfter=<ISO8601> when non-zero.
+	Extra               url.Values // Arbitrary extra params; keys overwrite named fields on conflict.
+	UsePOST             bool       // When true, encode params as a POST form body instead of a GET query string.
 }
 
 // MultiResult represents a single item in the response array from /tickets/multi.
