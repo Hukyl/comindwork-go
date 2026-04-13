@@ -4,17 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Go client library for the [ComindWork](https://comindwork.com) (Extranet) REST API. Zero external dependencies — stdlib only. Module: `github.com/Hukyl/comindwork-go`, requires Go 1.22+.
+Go client library for the [ComindWork](https://comindwork.com) (Extranet) REST API. Zero runtime dependencies (stdlib only); `github.com/stretchr/testify` is a test-only dep. Module: `github.com/Hukyl/comindwork-go`, requires Go 1.22+.
 
 The library is a thin transport for the ComindWork metaframework: it exposes generic record CRUD plus TUS file upload. Apps (TASK, TIMELOG, WORKDAY, etc.) and their field layouts are organization-specific and are the **caller's** responsibility — the API has no schema introspection endpoint, so this library deliberately ships no typed app models.
 
 ## Commands
 
 ```bash
-go build ./...          # Build
-go test ./...           # Run all tests
-go test -run TestFoo    # Run a single test
-go vet ./...            # Static analysis
+go build ./...                # Build
+go test ./...                 # Run all tests
+go test -run TestFoo ./...    # Run a single test
+go test -cover ./...          # Coverage summary
+go vet ./...                  # Static analysis
 ```
 
 No Makefile, no linter config, no CI pipeline exists yet.
@@ -35,8 +36,8 @@ Single-package library (`package comindwork`) with four files:
 - **Three list URL shapes** — choose based on what the caller already knows (see table below). `ListRecords` requires `publishing_alias`/`project_alias` in the rlx filter; `ListRecordsInApp` pushes workspace + app into the path; `ListRecordsByAppID` targets an app directly by ID.
 - **TUS file upload** — `UploadFile(r, size)` runs the TUS create → patch handshake in one call and returns the raw `Location` header value. Callers use that value as both `file_uid` and `id` inside an `attachments` entry when creating a record via `Multi`. Single PATCH only (no chunking/resumption).
 - **Auth** — Custom `CMW_AUTH_CODE <token>` authorization header (not Bearer). Set via `client.SetAuthToken(token)`.
-- **Logging** — Uses `log/slog` for HTTP error bodies. These are logged, not returned as structured errors.
-- **`http.Client` is not injectable** — hardcoded `&http.Client{}` in `NewClient`. Testing HTTP interactions requires refactoring to accept a custom client or `http.RoundTripper`.
+- **Logging** — Uses `log/slog` for HTTP error bodies. These are logged, not returned as structured errors. Tests that exercise non-2xx paths produce expected `ERROR` lines.
+- **`http.Client` is injectable** — `NewClient(baseURL, httpClient)` accepts a custom client; pass `nil` for the default `&http.Client{}`. Tests use `httptest.NewServer` + `srv.Client()`.
 
 ## API URL Patterns
 
@@ -54,3 +55,10 @@ Single-package library (`package comindwork`) with four files:
 
 - ISO8601 with milliseconds: `2006-01-02T15:04:05.000Z` (timestamps)
 - Date only: `2006-01-02` (date fields)
+
+## Testing
+
+- Tests are colocated with source: `client_test.go`, `upload_test.go`, `models_test.go`, `utils_test.go`.
+- AAA pattern with explicit `// Arrange` / `// Act` / `// Assert` comments; one logical assertion per test.
+- HTTP behavior is exercised end-to-end via `httptest.NewServer` + `NewClient(srv.URL, srv.Client())` — no `http.RoundTripper` mocking. Tests use closures to capture request state from the handler.
+- `testify/assert` for soft checks, `testify/require` when a later assertion depends on the value being well-formed.

@@ -19,11 +19,16 @@ type APIClient struct {
 }
 
 // NewClient creates a new ComindWork API client. baseURL must include the
-// API path prefix (e.g. "https://extranet.example.com/api").
-func NewClient(baseURL string) *APIClient {
+// API path prefix (e.g. "https://extranet.example.com/api"). Pass nil for
+// httpClient to use a default &http.Client{}; tests and callers that need
+// custom transports, timeouts, or cookies should pass a configured client.
+func NewClient(baseURL string, httpClient *http.Client) *APIClient {
+	if httpClient == nil {
+		httpClient = &http.Client{}
+	}
 	return &APIClient{
 		baseURL: baseURL,
-		client:  &http.Client{},
+		client:  httpClient,
 	}
 }
 
