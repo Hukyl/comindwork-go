@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Go client library for the [ComindWork](https://comindwork.com) (Extranet) REST API. Zero external dependencies — stdlib only. Module: `github.com/Hukyl/comindwork-go`, requires Go 1.22+.
 
+The library is a thin transport for the ComindWork metaframework: it exposes generic record CRUD plus TUS file upload. Apps (TASK, TIMELOG, WORKDAY, etc.) and their field layouts are organization-specific and are the **caller's** responsibility — the API has no schema introspection endpoint, so this library deliberately ships no typed app models.
+
 ## Commands
 
 ```bash
@@ -19,30 +21,36 @@ No Makefile, no linter config, no CI pipeline exists yet.
 
 ## Architecture
 
-Single-package library (`package comindwork`) with three files:
+Single-package library (`package comindwork`) with four files:
 
-- **`client.go`** — `APIClient` struct and all public/private methods. Layers: unexported HTTP helpers (`get`, `post`, `applyAuth`, `isRespError`) → unexported URL builders (`listURL`, `multiURL`) → public domain operations (records, users, workspaces, workdays, timelogs).
-- **`models.go`** — All types (`Workspace`, `Workday`, `TimeLog`, `Task`, `User`, `Record`, `ListOptions`, `MultiResult`, `MultiWarning`) and constants (app aliases, app IDs, transitions).
-- **`utils.go`** — Time formatting/parsing (`FormatISO8601`, `ParseISO8601`, `FormatDate`, `ParseDate`, `CalculateTotalReal`) and task reference parsing (`ParseTaskReference`, `FormatTaskReference`).
+- **`client.go`** — `APIClient` struct and record operations. Layers: unexported HTTP helpers (`get`, `post`, `applyAuth`, `isRespError`) → unexported URL builders (`listURL`, `scopedListURL`, `appIDListURL`, `multiURL`, `listQueryParams`) → public record operations (`ListRecords`, `ListRecordsInApp`, `ListRecordsByAppID`, `GetRecord`, `GetRecordByNumber`, `Multi`).
+- **`upload.go`** — TUS 1.0.0 file upload (`UploadFile`) and internal `tusCreate`/`tusPatch`/`resolveLocation` helpers.
+- **`models.go`** — Generic types (`Record`, `ListOptions`, `MultiResult`, `MultiWarning`) and protocol constants (`AuthPrefix`, `TransitionAdd`/`Edit`/`Delete`).
+- **`utils.go`** — Time formatting/parsing (`FormatISO8601`, `ParseISO8601`, `FormatDate`, `ParseDate`).
 
 ## Key Patterns
 
-- **`Record` is `map[string]any`** with typed accessors (`GetString`, `GetFloat`, `GetInt`). This is the primary type for raw API responses.
-- **Transition-based mutations** — Create, edit, and delete all go through `POST /tickets/multi`. The operation is determined by the `transition` field value (`add`, `edit`, `delete`).
-- **Workspace cache** — `APIClient` holds an in-memory `map[string]*Workspace` behind a `sync.RWMutex`. Populated manually via `RegisterWorkspace`, not fetched from the API.
+- **`Record` is `map[string]any`** with typed accessors (`GetString`, `GetFloat`, `GetInt`). This is the primary type for raw API responses. Field names are snake_case and app-specific; callers must know them.
+- **Unified mutation via `Multi`** — create, edit, and delete all go through `POST /tickets/multi`. The operation is determined by the `transition` field value in each record (`add` / `edit` / `delete`). `Multi` returns `[]MultiResult` and does not inspect per-record `Successful` — that is the caller's responsibility.
+- **Three list URL shapes** — choose based on what the caller already knows (see table below). `ListRecords` requires `publishing_alias`/`project_alias` in the rlx filter; `ListRecordsInApp` pushes workspace + app into the path; `ListRecordsByAppID` targets an app directly by ID.
+- **TUS file upload** — `UploadFile(r, size)` runs the TUS create → patch handshake in one call and returns the raw `Location` header value. Callers use that value as both `file_uid` and `id` inside an `attachments` entry when creating a record via `Multi`. Single PATCH only (no chunking/resumption).
 - **Auth** — Custom `CMW_AUTH_CODE <token>` authorization header (not Bearer). Set via `client.SetAuthToken(token)`.
-- **Logging** — Uses `log/slog` for warnings on skippable parse failures and HTTP errors. These are logged, not returned as errors.
+- **Logging** — Uses `log/slog` for HTTP error bodies. These are logged, not returned as structured errors.
 - **`http.Client` is not injectable** — hardcoded `&http.Client{}` in `NewClient`. Testing HTTP interactions requires refactoring to accept a custom client or `http.RoundTripper`.
 
 ## API URL Patterns
 
 | Pattern | Usage |
 |---|---|
-| `{base}/tickets/list?listOfFields=&limitRecords=&rlx=&sortby=` | Global record listing |
-| `{base}/tickets/multi` | Bulk create/update/delete (POST) |
-| `{base}/aid/{appID}/tickets/list?...` | App-ID-based listing (users) |
+| `{base}/tickets/list?listOfFields=&limitRecords=&rlx=&sortby=` | Global record listing (scope via rlx filter) |
+| `{base}/w/{wsAlias}/a/{appAlias}/tickets/list?...` | Workspace- and app-scoped listing |
+| `{base}/aid/{appID}/tickets/list?...` | App-ID-scoped listing |
+| `{base}/tickets/multi` | Bulk create / edit / delete (POST) |
+| `{base}/upload-tus` (+ PATCH to Location) | TUS 1.0.0 file upload |
+
+`baseURL` is expected to include the `/api` prefix (e.g. `https://extranet.example.com/api`).
 
 ## Time Formats
 
 - ISO8601 with milliseconds: `2006-01-02T15:04:05.000Z` (timestamps)
-- Date only: `2006-01-02` (workday dates)
+- Date only: `2006-01-02` (date fields)

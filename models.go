@@ -1,116 +1,19 @@
 package comindwork
 
-import (
-	"fmt"
-	"time"
-)
+// AuthPrefix is the authorization scheme used by the ComindWork API.
+const AuthPrefix = "CMW_AUTH_CODE"
 
-// Auth
-const (
-	AuthPrefix = "CMW_AUTH_CODE"
-)
-
-// App aliases used in scoped URLs (/w/{ws}/a/{app}/...)
-const (
-	AppAliasTask    = "TASK"
-	AppAliasTimelog = "TIMELOG"
-	AppAliasWorkday = "WORKDAY"
-	AppAliasUser    = "USER"
-)
-
-// App IDs used in API responses and record identification
-const (
-	AppIDTask    = "v2-app-task"
-	AppIDTimelog = "v2-hr-timelog"
-	AppIDWorkday = "v2-hr-workday"
-	AppIDUser    = "default-app-guser"
-)
-
-// Transitions for /tickets/multi operations
+// Transitions for /tickets/multi operations.
 const (
 	TransitionAdd    = "add"
 	TransitionEdit   = "edit"
 	TransitionDelete = "delete"
 )
 
-// Workspace represents a ComindWork workspace/project
-type Workspace struct {
-	ID    string `json:"id"`
-	Alias string `json:"alias"`
-	Name  string `json:"name,omitempty"`
-}
-
-func (w Workspace) String() string {
-	if w.Name != "" {
-		return fmt.Sprintf("Workspace <%s>: %s (%s)", w.ID, w.Name, w.Alias)
-	}
-	return fmt.Sprintf("Workspace <%s>: %s", w.ID, w.Alias)
-}
-
-// Workday represents a daily container for timelogs
-type Workday struct {
-	ID          string     `json:"id"`
-	WorkspaceID string     `json:"workspaceId"`
-	Date        time.Time  `json:"date"`
-	TimeLogs    []*TimeLog `json:"timeLogs,omitempty"`
-}
-
-func (w Workday) String() string {
-	return fmt.Sprintf("Workday <%s>: %s", w.ID, w.Date.Format("2006-01-02"))
-}
-
-// TimeLog represents a time entry in ComindWork
-type TimeLog struct {
-	ID           string    `json:"id"`
-	WorkdayID    string    `json:"workdayId"`
-	WorkspaceID  string    `json:"workspaceId"`
-	Title        string    `json:"title"`
-	StartOn      time.Time `json:"startOn"`
-	FinishOn     time.Time `json:"finishOn"`
-	TotalReal    float64   `json:"totalReal"` // Duration in hours
-	Task         *Task     `json:"task,omitempty"`
-	UpdateDate   time.Time `json:"updateDate,omitempty"`
-	ProjectAlias string    `json:"projectAlias,omitempty"`
-	Number       int       `json:"number,omitempty"`
-}
-
-func (t TimeLog) String() string {
-	return fmt.Sprintf("TimeLog <%s>: %s (%s - %s)",
-		t.ID, t.Title,
-		t.StartOn.Format("15:04"),
-		t.FinishOn.Format("15:04"))
-}
-
-// Task represents a task reference parsed from "WORKSPACE/TASKnnn" format
-type Task struct {
-	WorkspaceAlias string `json:"workspaceAlias"`
-	TaskNumber     int    `json:"taskNumber"`
-	TaskID         string `json:"taskId,omitempty"`
-}
-
-func (t Task) String() string {
-	return fmt.Sprintf("%s/TASK%d", t.WorkspaceAlias, t.TaskNumber)
-}
-
-// User represents a ComindWork user/account
-type User struct {
-	ID        string `json:"id"`
-	Email     string `json:"email,omitempty"`
-	Name      string `json:"name,omitempty"`
-	FirstName string `json:"firstName,omitempty"`
-	LastName  string `json:"lastName,omitempty"`
-	Title     string `json:"title,omitempty"`
-}
-
-func (u User) String() string {
-	if u.Name != "" {
-		return u.Name
-	}
-	return u.Email
-}
-
-// Record represents a generic API record returned as a flat JSON object.
-// The official API returns records with snake_case field names.
+// Record is a generic API record returned as a flat JSON object with
+// snake_case field names. Field layouts are organization- and app-specific;
+// the ComindWork API does not expose a schema endpoint, so callers are
+// responsible for knowing which fields a given app exposes.
 type Record map[string]any
 
 // GetString extracts a string field from the record.
