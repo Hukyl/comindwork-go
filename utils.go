@@ -15,8 +15,14 @@ func FormatISO8601(t time.Time) string {
 }
 
 // ParseISO8601 parses a timestamp string from the ComindWork API.
+// It accepts both millisecond-precision ("...T15:04:05.000Z") and
+// second-precision ("...T15:04:05Z") timestamps.
 func ParseISO8601(s string) (time.Time, error) {
-	return time.Parse(ISO8601Layout, s)
+	t, err := time.Parse(ISO8601Layout, s)
+	if err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, s)
 }
 
 // FormatDate formats a time.Time to the date format expected by the ComindWork API.

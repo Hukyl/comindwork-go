@@ -41,6 +41,15 @@ func TestParseISO8601_ReturnsUTCTime(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC), got)
 }
 
+func TestParseISO8601_ParsesTimestampWithoutMilliseconds(t *testing.T) {
+	// Act
+	got, err := ParseISO8601("2026-04-13T15:00:00Z")
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2026, 4, 13, 15, 0, 0, 0, time.UTC), got)
+}
+
 func TestParseISO8601_ReturnsErrorOnMalformedInput(t *testing.T) {
 	// Act
 	_, err := ParseISO8601("not-a-timestamp")
