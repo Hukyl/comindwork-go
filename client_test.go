@@ -191,9 +191,10 @@ func TestListRecordsByAppID_BuildsAppIDURL(t *testing.T) {
 
 func TestGetRecord_FiltersByID(t *testing.T) {
 	// Arrange
-	var gotRLX string
+	var gotRLX, gotSkip string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotRLX = r.URL.Query().Get("rlx")
+		gotSkip = r.URL.Query().Get("skipAncestors")
 		_, _ = w.Write([]byte(`[{"id":"abc","title":"x"}]`))
 	})
 
@@ -203,6 +204,7 @@ func TestGetRecord_FiltersByID(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, `id="abc"`, gotRLX)
+	assert.Equal(t, "true", gotSkip)
 	assert.Equal(t, "x", rec.GetString("title"))
 }
 
@@ -221,10 +223,11 @@ func TestGetRecord_ReturnsErrorWhenNotFound(t *testing.T) {
 
 func TestGetRecordByNumber_UsesScopedURLAndNumberFilter(t *testing.T) {
 	// Arrange
-	var gotPath, gotRLX string
+	var gotPath, gotRLX, gotSkip string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotRLX = r.URL.Query().Get("rlx")
+		gotSkip = r.URL.Query().Get("skipAncestors")
 		_, _ = w.Write([]byte(`[{"id":"abc","number":167}]`))
 	})
 
@@ -235,6 +238,7 @@ func TestGetRecordByNumber_UsesScopedURLAndNumberFilter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/w/NICI/a/TASK/tickets/list", gotPath)
 	assert.Equal(t, `number="167"`, gotRLX)
+	assert.Equal(t, "true", gotSkip)
 	assert.Equal(t, 167, rec.GetInt("number"))
 }
 

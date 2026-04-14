@@ -242,8 +242,9 @@ func (c *APIClient) listRecords(baseURL string, opts ListOptions) ([]Record, err
 // GetRecord retrieves a single record by its ID via the global /tickets/list endpoint.
 func (c *APIClient) GetRecord(id, listOfFields string) (Record, error) {
 	opts := ListOptions{
-		ListOfFields: listOfFields,
-		Filter:       fmt.Sprintf(`id="%s"`, id),
+		ListOfFields:  listOfFields,
+		Filter:        fmt.Sprintf(`id="%s"`, id),
+		SkipAncestors: true,
 	}
 	records, err := c.ListRecords(opts)
 	if err != nil {
@@ -261,8 +262,9 @@ func (c *APIClient) GetRecord(id, listOfFields string) (Record, error) {
 // browser traffic; the server accepts unquoted numbers as well.
 func (c *APIClient) GetRecordByNumber(wsAlias, appAlias string, number int, listOfFields string) (Record, error) {
 	opts := ListOptions{
-		ListOfFields: listOfFields,
-		Filter:       fmt.Sprintf(`number="%d"`, number),
+		ListOfFields:  listOfFields,
+		Filter:        fmt.Sprintf(`number="%d"`, number),
+		SkipAncestors: true,
 	}
 	records, err := c.ListRecordsInApp(wsAlias, appAlias, opts)
 	if err != nil {
