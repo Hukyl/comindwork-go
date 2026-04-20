@@ -571,6 +571,116 @@ func TestGetCommon_ReturnsErrorOnNon2xx(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// --- ListHistoryInApp ---
+
+func TestListHistoryInApp_BuildsScopedHistoryURL(t *testing.T) {
+	// Arrange
+	var gotMethod, gotPath string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodGet, gotMethod)
+	assert.Equal(t, "/w/NICI/a/TASK/tickets/history", gotPath)
+}
+
+func TestListHistoryInApp_EncodesListOptionsQuery(t *testing.T) {
+	// Arrange
+	var gotQuery url.Values
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{
+		ListOfFields: "ALL",
+		Filter:       `id="047695c5-8f48-4d6a-9b6c-9c6c39f4de4d"`,
+		SortBy:       "version_timestamp desc",
+	})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "ALL", gotQuery.Get("listOfFields"))
+	assert.Equal(t, `id="047695c5-8f48-4d6a-9b6c-9c6c39f4de4d"`, gotQuery.Get("rlx"))
+	assert.Equal(t, "version_timestamp desc", gotQuery.Get("sortby"))
+}
+
+func TestListHistoryInApp_AppliesAuthHeader(t *testing.T) {
+	// Arrange
+	var gotAuth string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("[]"))
+	})
+	client.SetAuthToken("hist-token")
+
+	// Act
+	_, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "CMW_AUTH_CODE hist-token", gotAuth)
+}
+
+func TestListHistoryInApp_DecodesHistoryEntries(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"version_id":"v1","transition":"comment","comment":"<p>hi</p>"},
+			{"version_id":"v2","transition":"edit","minor_change":false}
+		]`))
+	})
+
+	// Act
+	records, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{})
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	assert.Equal(t, "v1", records[0].GetString("version_id"))
+	assert.Equal(t, "comment", records[0].GetString("transition"))
+	assert.Equal(t, "edit", records[1].GetString("transition"))
+}
+
+func TestListHistoryInApp_UsePOSTHitsSameScopedPath(t *testing.T) {
+	// Arrange
+	var gotPath, gotMethod string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	// Act
+	_, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{UsePOST: true})
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "/w/NICI/a/TASK/tickets/history", gotPath)
+}
+
+func TestListHistoryInApp_ReturnsErrorOnNon2xx(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	// Act
+	_, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{})
+
+	// Assert
+	assert.Error(t, err)
+}
+
 // --- CountChanged ---
 
 func TestCountChangedInApp_BuildsScopedURLAndSinceTime(t *testing.T) {

@@ -8,6 +8,29 @@ import (
 	"strconv"
 )
 
+// DownloadFile fetches a file (attachment) body by its record UUID via
+// GET /download/{id}?lm=true. Returns the full body and the server-reported
+// Content-Type header. Symmetric to UploadFile.
+//
+// The lm=true query param mirrors the ComindWork UI and acts as a cache
+// buster; it is set unconditionally and not exposed to callers.
+func (c *APIClient) DownloadFile(id string) ([]byte, string, error) {
+	if id == "" {
+		return nil, "", fmt.Errorf("id is required")
+	}
+	resp, err := c.get(fmt.Sprintf("%s/download/%s?lm=true", c.baseURL, url.PathEscape(id)))
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read download body: %w", err)
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
 // TUS 1.0.0 protocol constants (https://tus.io).
 const (
 	tusVersion         = "1.0.0"

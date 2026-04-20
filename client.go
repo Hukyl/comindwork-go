@@ -171,6 +171,11 @@ func (c *APIClient) scopedListBaseURL(wsAlias, appAlias string) string {
 	return fmt.Sprintf("%s/w/%s/a/%s/tickets/list", c.baseURL, wsAlias, appAlias)
 }
 
+// scopedHistoryBaseURL is the workspace- and app-scoped /w/{wsAlias}/a/{appAlias}/tickets/history endpoint.
+func (c *APIClient) scopedHistoryBaseURL(wsAlias, appAlias string) string {
+	return fmt.Sprintf("%s/w/%s/a/%s/tickets/history", c.baseURL, wsAlias, appAlias)
+}
+
 // appIDListBaseURL is the /aid/{appID}/tickets/list endpoint.
 func (c *APIClient) appIDListBaseURL(appID string) string {
 	return fmt.Sprintf("%s/aid/%s/tickets/list", c.baseURL, appID)
@@ -215,6 +220,19 @@ func (c *APIClient) ListRecordsInApp(wsAlias, appAlias string, opts ListOptions)
 // /aid/{appID}/tickets/list endpoint.
 func (c *APIClient) ListRecordsByAppID(appID string, opts ListOptions) ([]Record, error) {
 	return c.listRecords(c.appIDListBaseURL(appID), opts)
+}
+
+// ListHistoryInApp retrieves version entries (edits, state changes, comments)
+// for records scoped to a workspace and app via the
+// /w/{wsAlias}/a/{appAlias}/tickets/history endpoint. The server accepts the
+// same query shape as /tickets/list, so ListOptions (rlx, listOfFields,
+// sortby, limitRecords, skipAncestors, UsePOST) is reused verbatim.
+//
+// Each returned Record is a versioned snapshot; interpretation of fields
+// (version_id, version_timestamp, transition, comment, attachments__list,
+// etc.) is the caller's responsibility.
+func (c *APIClient) ListHistoryInApp(wsAlias, appAlias string, opts ListOptions) ([]Record, error) {
+	return c.listRecords(c.scopedHistoryBaseURL(wsAlias, appAlias), opts)
 }
 
 func (c *APIClient) listRecords(baseURL string, opts ListOptions) ([]Record, error) {
