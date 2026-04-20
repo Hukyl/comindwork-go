@@ -579,7 +579,7 @@ func TestListHistoryInApp_BuildsScopedHistoryURL(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		_, _ = w.Write([]byte("[]"))
+		_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 	})
 
 	// Act
@@ -596,7 +596,7 @@ func TestListHistoryInApp_EncodesListOptionsQuery(t *testing.T) {
 	var gotQuery url.Values
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
-		_, _ = w.Write([]byte("[]"))
+		_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 	})
 
 	// Act
@@ -618,7 +618,7 @@ func TestListHistoryInApp_AppliesAuthHeader(t *testing.T) {
 	var gotAuth string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		_, _ = w.Write([]byte("[]"))
+		_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 	})
 	client.SetAuthToken("hist-token")
 
@@ -633,10 +633,10 @@ func TestListHistoryInApp_AppliesAuthHeader(t *testing.T) {
 func TestListHistoryInApp_DecodesHistoryEntries(t *testing.T) {
 	// Arrange
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[
+		_, _ = w.Write([]byte(`{"status":"ok","data":[
 			{"version_id":"v1","transition":"comment","comment":"<p>hi</p>"},
 			{"version_id":"v2","transition":"edit","minor_change":false}
-		]`))
+		],"filteredRecordsCount":2,"totalRecordsCount":2,"unfilteredRecordsCount":2,"isPartialLoad":false}`))
 	})
 
 	// Act
@@ -656,7 +656,7 @@ func TestListHistoryInApp_UsePOSTHitsSameScopedPath(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotMethod = r.Method
-		_, _ = w.Write([]byte("[]"))
+		_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 	})
 
 	// Act
@@ -679,6 +679,20 @@ func TestListHistoryInApp_ReturnsErrorOnNon2xx(t *testing.T) {
 
 	// Assert
 	assert.Error(t, err)
+}
+
+func TestListHistoryInApp_ReturnsErrorOnNonOkEnvelopeStatus(t *testing.T) {
+	// Arrange
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"error","data":null}`))
+	})
+
+	// Act
+	_, err := client.ListHistoryInApp("NICI", "TASK", ListOptions{})
+
+	// Assert
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"error"`)
 }
 
 // --- CountChanged ---

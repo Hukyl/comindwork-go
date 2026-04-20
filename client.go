@@ -228,11 +228,39 @@ func (c *APIClient) ListRecordsByAppID(appID string, opts ListOptions) ([]Record
 // same query shape as /tickets/list, so ListOptions (rlx, listOfFields,
 // sortby, limitRecords, skipAncestors, UsePOST) is reused verbatim.
 //
+// Unlike /tickets/list, /tickets/history wraps its result in a
+// {status, data, ...counts} envelope; this method unwraps the envelope and
+// returns the records. Counts are not surfaced yet.
+//
 // Each returned Record is a versioned snapshot; interpretation of fields
 // (version_id, version_timestamp, transition, comment, attachments__list,
 // etc.) is the caller's responsibility.
 func (c *APIClient) ListHistoryInApp(wsAlias, appAlias string, opts ListOptions) ([]Record, error) {
-	return c.listRecords(c.scopedHistoryBaseURL(wsAlias, appAlias), opts)
+	params := listQueryParams(opts)
+
+	var resp *http.Response
+	var err error
+	if opts.UsePOST {
+		resp, err = c.postForm(c.scopedHistoryBaseURL(wsAlias, appAlias), params)
+	} else {
+		resp, err = c.get(c.scopedHistoryBaseURL(wsAlias, appAlias) + "?" + params.Encode())
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var envelope struct {
+		Status string   `json:"status"`
+		Data   []Record `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("failed to decode history envelope: %w", err)
+	}
+	if envelope.Status != "ok" {
+		return nil, fmt.Errorf("history endpoint returned status %q", envelope.Status)
+	}
+	return envelope.Data, nil
 }
 
 func (c *APIClient) listRecords(baseURL string, opts ListOptions) ([]Record, error) {
